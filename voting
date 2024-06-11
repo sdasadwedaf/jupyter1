@@ -1,1 +1,80 @@
-d
+import os
+import random
+import numpy as np
+import pandas as pd
+from tqdm import tqdm
+
+import plotly.express as px
+
+import category_encoders as ce
+from sklearn.ensemble import AdaBoostClassifier, RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+from sklearn.ensemble import RandomForestClassifier
+def seed_everything(seed):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+seed_everything(42)
+train = pd.read_csv('train.csv', nrows=7000000)
+test = pd.read_csv('test.csv')
+train.head()
+click = train['Click'].value_counts(normalize=True)
+
+click_figure = px.bar(click,
+             x=['Not Clicked : 0', 'Clicked : 1'],
+             y=click.values.tolist(),
+             labels={'x': 'Value', 'y': 'Percentage'},
+             width = 450,
+             height = 500
+            )
+
+
+click_figure.show()
+train_x = train.drop(columns=['ID', 'Click'])
+train_y = train['Click']
+
+test_x = test.drop(columns=['ID'])
+for col in tqdm(train_x.columns):
+    if train_x[col].isnull().sum() != 0:
+        train_x[col].fillna(0, inplace=True)
+        test_x[col].fillna(0, inplace=True)
+encoding_target = list(train_x.dtypes[train_x.dtypes == "object"].index)
+
+enc = ce.CountEncoder(cols = encoding_target).fit(train_x, train_y)
+X_train_encoded = enc.transform(train_x)
+X_test_encoded = enc.transform(test_x)
+ada_boosting = AdaBoostClassifier()
+random_forest = RandomForestClassifier()
+gradient_boosting = GradientBoostingClassifier()
+rf_model = RandomForestClassifier()
+
+rf_param_grid = {
+    'n_estimators': [950],
+    'max_features': ['sqrt'],
+    'max_depth: [550]
+}
+
+
+rf_grid_search = GridSearchCV(estimator = rf_model, param_grid = rf_param_grid, cv = 5, scoring = 'accuracy')
+
+
+rf_grid_search.fit(X_train_encoded, train_y)
+
+
+print("Random Forest:")
+print(f"Best parameters: {rf_grid_search.best_params_}")
+print(f"Best cross-validation score: {rf_grid_search.best_score_:.2f")
+voting_clf_soft = VotingClassifier(
+    estimators=[('ada', ada_boosting), ('rf', random_forest), ('gb', gradient_boosting)],
+    voting='soft' 
+)
+voting_clf_soft.fit(X_train_encoded, train_y)
+pred_soft = voting_clf_soft.predict_proba(X_test_encoded)
+display(voting_clf_soft.classes_)
+display(pred_soft)
+sample_submission = pd.read_csv('sample_submission.csv')
+sample_submission
+sample_submission['Click'] = pred_soft[:,1]
+sample_submission
+sample_submission.to_csv('baseline_submission_soft.csv', index=False)
